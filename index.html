@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="UTF-8">
+<title>Estructura Analítica — Fundació Oncolliga</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#F5F7FA;color:#1F2D3D}
+#password-screen{position:fixed;inset:0;background:#1F2D3D;display:flex;align-items:center;justify-content:center;z-index:9999}
+#password-box{background:white;border-radius:12px;padding:40px 48px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);width:360px}
+#password-box .logo{font-size:12px;font-weight:700;color:#AAB8C2;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+#password-box h2{font-size:18px;font-weight:700;color:#1F2D3D;margin-bottom:6px}
+#password-box p{font-size:12px;color:#888;margin-bottom:24px}
+#password-input{width:100%;padding:10px 14px;border:2px solid #E0E6ED;border-radius:7px;font-size:15px;outline:none;text-align:center;letter-spacing:3px;transition:border .2s}
+#password-input:focus{border-color:#2E75B6}
+#password-input.error{border-color:#C00000}
+#password-btn{margin-top:14px;width:100%;padding:11px;background:#1F4E79;color:white;border:none;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;transition:background .2s}
+#password-btn:hover{background:#2E75B6}
+#error-msg{margin-top:10px;font-size:12px;color:#C00000;min-height:18px}
+#app-content{display:none}
+header{background:#1F2D3D;color:white;padding:16px 30px}
+header h1{font-size:19px;font-weight:700}
+header p{font-size:11px;color:#AAB8C2;margin-top:3px}
+#controls{display:flex;gap:10px;align-items:center;padding:10px 30px;background:white;border-bottom:1px solid #E0E6ED;flex-wrap:wrap}
+#controls label{font-size:12px;color:#555}
+button{padding:6px 14px;border:none;border-radius:5px;background:#2E75B6;color:white;cursor:pointer;font-size:12px;font-weight:600}
+button:hover{background:#1F4E79}
+button.sec{background:#F0F4F8;color:#333;border:1px solid #CCC}
+button.sec:hover{background:#E0E6ED}
+#legend{display:flex;gap:12px;flex-wrap:wrap;padding:7px 30px;background:white;border-bottom:1px solid #E0E6ED}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#444}
+.leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+#svg-container{overflow:auto;padding:20px}
+svg{display:block}
+.node circle{stroke-width:2;cursor:pointer}
+.node text{font-size:11px;dominant-baseline:central;cursor:pointer;user-select:none}
+.link{fill:none;stroke-width:1.4}
+.tooltip{position:fixed;background:rgba(31,45,61,0.92);color:white;padding:8px 12px;border-radius:6px;font-size:11px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999;max-width:260px;line-height:1.5}
+footer{text-align:center;font-size:10px;color:#AAA;padding:10px;border-top:1px solid #E0E6ED;background:white}
+</style>
+</head>
+<body>
+
+<div id="password-screen">
+  <div id="password-box">
+    <div class="logo">Fundació Oncolliga</div>
+    <h2>Accés restringit</h2>
+    <p>Introdueix la contrasenya per accedir<br>al diagrama de l'estructura analítica</p>
+    <input type="password" id="password-input" placeholder="Contrasenya" autofocus>
+    <button id="password-btn" onclick="checkPassword()">Accedir</button>
+    <div id="error-msg"></div>
+  </div>
+</div>
+
+<div id="app-content">
+  <header>
+    <h1>Estructura Analítica de la Fundació Oncolliga</h1>
+    <p>Diagrama jeràrquic interactiu · Fes clic als nodes per expandir/contraure</p>
+  </header>
+  <div id="controls">
+    <label>Controls:</label>
+    <button onclick="expandAll()">Expandeix tot</button>
+    <button class="sec" onclick="collapseAll()">Contrau tot</button>
+    <button class="sec" onclick="resetZoom()">Reinicia zoom</button>
+    <label style="margin-left:8px">🔍 Roda del ratolí per fer zoom · Arrossega per desplaçar</label>
+  </div>
+  <div id="legend"></div>
+  <div id="svg-container"><svg id="tree-svg"></svg></div>
+  <div class="tooltip" id="tooltip"></div>
+  <footer>Font: Elaboració pròpia a partir de l'estructura analítica de la Fundació Oncolliga · TFM</footer>
+</div>
+
+<script>
+// ── COLORS ────────────────────────────────────────────────────────────────────
+const COLORS = {
+  "ESTRUCTURA":            "#1F4E79",
+  "SEUS LOCALS":           "#2E75B6",
+  "ACTIVITATS VÀRIES":     "#70AD47",
+  "ACTIVITATS ESPORTIVES": "#ED7D31",
+  "PRESTACIÓ SERVEIS":     "#7030A0",
+  "INGRESSOS QUOTES":      "#C00000",
+  "DONATIUS ESPÈCIE":      "#0070C0"
+};
+
+// ── DADES ─────────────────────────────────────────────────────────────────────
+const rawData = [
+  {cat:"ESTRUCTURA",grup:"GENERAL",sub:"GENERAL"},
+  {cat:"ESTRUCTURA",grup:"GENERAL",sub:"COVID-19"},
+  {cat:"ESTRUCTURA",grup:"GENERAL",sub:"EMPRESA"},
+  {cat:"ESTRUCTURA",grup:"VOLUNTARIAT",sub:"VOLUNTARIAT"},
+  {cat:"ESTRUCTURA",grup:"COMUNICACIÓ",sub:"COMUNICACIÓ"},
+  {cat:"ESTRUCTURA",grup:"MATERIAL PAD",sub:"MATERIAL PAD"},
+  {cat:"SEUS LOCALS",grup:"GIRONA",sub:"GIRONA"},{cat:"SEUS LOCALS",grup:"GIRONA",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BREDA",sub:"BREDA"},{cat:"SEUS LOCALS",grup:"BREDA",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"PORQUERES",sub:"PORQUERES"},{cat:"SEUS LOCALS",grup:"PORQUERES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"PALAFRUGELL",sub:"PALAFRUGELL"},{cat:"SEUS LOCALS",grup:"PALAFRUGELL",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BEGUR",sub:"BEGUR"},{cat:"SEUS LOCALS",grup:"BEGUR",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"CASTELLÓ D'EMPÚRIES",sub:"CASTELLÓ D'EMPÚRIES"},{cat:"SEUS LOCALS",grup:"CASTELLÓ D'EMPÚRIES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"ANGLÈS",sub:"ANGLÈS"},{cat:"SEUS LOCALS",grup:"ANGLÈS",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"CAMPDEVÀNOL",sub:"CAMPDEVÀNOL"},{cat:"SEUS LOCALS",grup:"CAMPDEVÀNOL",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"GOMBRÈN",sub:"GOMBRÈN"},{cat:"SEUS LOCALS",grup:"GOMBRÈN",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LES LLOSES",sub:"LES LLOSES"},{cat:"SEUS LOCALS",grup:"LES LLOSES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"PARDINES",sub:"PARDINES"},{cat:"SEUS LOCALS",grup:"PARDINES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"RIBES DE FRESER",sub:"RIBES DE FRESER"},{cat:"SEUS LOCALS",grup:"RIBES DE FRESER",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"RIPOLL",sub:"RIPOLL"},{cat:"SEUS LOCALS",grup:"RIPOLL",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"SANT JOAN ABADESSES",sub:"SANT JOAN ABADESSES"},{cat:"SEUS LOCALS",grup:"SANT JOAN ABADESSES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"CAMPRODON",sub:"CAMPRODON"},{cat:"SEUS LOCALS",grup:"CAMPRODON",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"SANT PAU DE SEGÚRIES",sub:"SANT PAU DE SEGÚRIES"},{cat:"SEUS LOCALS",grup:"SANT PAU DE SEGÚRIES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BANYOLES",sub:"BANYOLES"},{cat:"SEUS LOCALS",grup:"BANYOLES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"ARBÚCIES",sub:"ARBÚCIES"},{cat:"SEUS LOCALS",grup:"ARBÚCIES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"OLOT",sub:"OLOT"},{cat:"SEUS LOCALS",grup:"OLOT",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"SALT",sub:"SALT"},{cat:"SEUS LOCALS",grup:"SALT",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BLANES",sub:"BLANES"},{cat:"SEUS LOCALS",grup:"BLANES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"PALAMÓS",sub:"PALAMÓS"},{cat:"SEUS LOCALS",grup:"PALAMÓS",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"PLATJA D'ARO",sub:"PLATJA D'ARO"},{cat:"SEUS LOCALS",grup:"PLATJA D'ARO",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LLORET DE MAR",sub:"LLORET DE MAR"},{cat:"SEUS LOCALS",grup:"LLORET DE MAR",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"SANT FELIU DE GUÍXOLS",sub:"SANT FELIU DE GUÍXOLS"},{cat:"SEUS LOCALS",grup:"SANT FELIU DE GUÍXOLS",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LA BISBAL D'EMPORDÀ",sub:"LA BISBAL D'EMPORDÀ"},{cat:"SEUS LOCALS",grup:"LA BISBAL D'EMPORDÀ",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BESALÚ",sub:"BESALÚ"},{cat:"SEUS LOCALS",grup:"BESALÚ",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LLANÇÀ",sub:"LLANÇÀ"},{cat:"SEUS LOCALS",grup:"LLANÇÀ",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"L'ESCALA",sub:"L'ESCALA"},{cat:"SEUS LOCALS",grup:"L'ESCALA",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LLAGOSTERA",sub:"LLAGOSTERA"},{cat:"SEUS LOCALS",grup:"LLAGOSTERA",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"FIGUERES",sub:"FIGUERES"},{cat:"SEUS LOCALS",grup:"FIGUERES",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"FLAÇÀ",sub:"FLAÇÀ"},{cat:"SEUS LOCALS",grup:"FLAÇÀ",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"AMER",sub:"AMER"},{cat:"SEUS LOCALS",grup:"AMER",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"BESCANO",sub:"BESCANO"},{cat:"SEUS LOCALS",grup:"BESCANO",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"LA JONQUERA",sub:"LA JONQUERA"},{cat:"SEUS LOCALS",grup:"LA JONQUERA",sub:"EMPRESA"},
+  {cat:"SEUS LOCALS",grup:"TORROELLA DE MONTGRÍ",sub:"TORROELLA DE MONTGRÍ"},{cat:"SEUS LOCALS",grup:"TORROELLA DE MONTGRÍ",sub:"EMPRESA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"ACTIVITATS VÀRIES"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"RUN4CANCER"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"MARXA DEL XUIXO"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"SOPAR BENÈFIC"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"ONCOGOSPEL"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"BOMBERS"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROMOCIÓ",sub:"XEFS AMB COR"},
+  {cat:"ACTIVITATS VÀRIES",grup:"GUAPES I VALENTES",sub:"GUAPES I VALENTES"},
+  {cat:"ACTIVITATS VÀRIES",grup:"GUAPES I VALENTES",sub:"JO DONO-PERRUQUES"},
+  {cat:"ACTIVITATS VÀRIES",grup:"GUAPES I VALENTES",sub:"VENDA CABELL"},
+  {cat:"ACTIVITATS VÀRIES",grup:"ONCOLLIGA'T",sub:"ONCOLLIGA'T"},
+  {cat:"ACTIVITATS VÀRIES",grup:"ONCOLLIGA'T",sub:"EMPRESA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROJECTE MIMOSA",sub:"PROJECTE MIMOSA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"FLAÇÀ"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"VIDRERES"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"LA BISBAL"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"NAVATA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"SALT"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"CAMPRODON"},
+  {cat:"ACTIVITATS VÀRIES",grup:"DINAR SOLIDARI",sub:"EMPRESA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"COIXINS APADRINAMENT",sub:"COIXINS"},
+  {cat:"ACTIVITATS VÀRIES",grup:"HÀBITS SALUDABLES",sub:"HÀBITS SALUDABLES"},
+  {cat:"ACTIVITATS VÀRIES",grup:"PROGRAMA 1x1x1",sub:"PROGRAMA 1x1x1"},
+  {cat:"ACTIVITATS VÀRIES",grup:"ONCOROAD",sub:"ONCOROAD"},
+  {cat:"ACTIVITATS VÀRIES",grup:"LOTERIA",sub:"LOTERIA"},
+  {cat:"ACTIVITATS VÀRIES",grup:"MARXA NÒRDICA",sub:"MARXA NÒRDICA"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOBIKE",sub:"ONCOBIKE"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOBIKE",sub:"VIRTUAL"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOBIKE",sub:"VENDES AMB IVA"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOTRAIL",sub:"ONCOTRAIL"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOTRAIL",sub:"VIRTUAL"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOTRAIL",sub:"ALTRES DONACIONS"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOSWIM",sub:"ONCOSWIM"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOSWIM",sub:"VIRTUAL"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOGRAVEL",sub:"ONCOGRAVEL"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOCAIAC",sub:"ONCOCAIAC"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOTRIATLÓ",sub:"ONCOTRIATLÓ"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOESQUIMO",sub:"ONCOESQUIMO"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCODIVE",sub:"ONCODIVE"},
+  {cat:"ACTIVITATS ESPORTIVES",grup:"ONCOEXTREM",sub:"ONCOEXTREM"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"FISIOS",sub:"FISIOS"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"FISIOS",sub:"JO DONO"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PSICOS",sub:"PSICOS"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PSICOS",sub:"JO DONO"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PSICOS",sub:"CAMINADA DEL SILENCI"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PSICOS",sub:"MEDITACIÓ"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PROF. AUTÒNOMS",sub:"PROFESSIONALS AUTÒNOMS"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PREVENCIÓ",sub:"PREVENCIÓ"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"ESTÈTICA ONCOLÒGICA",sub:"ESTÈTICA ONCOLÒGICA"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"ESTÈTICA ONCOLÒGICA",sub:"JO DONO"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"LLAR RESIDÈNCIA",sub:"LLAR RESIDÈNCIA"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"NETEJA ASSISTENCIAL",sub:"NETEJA ASSISTENCIAL"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"TERÀPIES COMPL.",sub:"MINDFULNESS"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"TERÀPIES COMPL.",sub:"REIKI"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"TERÀPIES COMPL.",sub:"IOGA"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"TERÀPIES COMPL.",sub:"ARTTERÀPIA"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"PODOLOGIA",sub:"PODOLOGIA"},
+  {cat:"PRESTACIÓ SERVEIS",grup:"SEXOLOGIA",sub:"SEXOLOGIA"},
+  {cat:"INGRESSOS QUOTES",grup:"QUOTES SOCIS",sub:"QUOTES SOCIS"},
+  {cat:"INGRESSOS QUOTES",grup:"QUOTES DONANTS",sub:"QUOTES DONANTS"},
+  {cat:"INGRESSOS QUOTES",grup:"QUOTES DONANTS",sub:"DONA LA CARA"},
+  {cat:"INGRESSOS QUOTES",grup:"QUOTES DONANTS",sub:"PALAFRUGELL"},
+  {cat:"INGRESSOS QUOTES",grup:"QUOTES DONANTS",sub:"EMPRESA"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"RUN4CANCER"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"MARXA DEL XUIXO"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"SOPAR BENÈFIC"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"GUAPES I VALENTES"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"ONCOSWIM"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"ONCOTRAIL"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"BOMBERS"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"PALAMÓS"},
+  {cat:"DONATIUS ESPÈCIE",grup:"ESPÈCIES",sub:"GENERAL"}
+];
+
+// ── CONTRASENYA ───────────────────────────────────────────────────────────────
+let initialized = false;
+
+function checkPassword() {
+  const inp = document.getElementById('password-input');
+  const err = document.getElementById('error-msg');
+  if (inp.value === 'TFM_Business') {
+    document.getElementById('password-screen').style.display = 'none';
+    document.getElementById('app-content').style.display = 'block';
+    if (!initialized) { initialized = true; setTimeout(initDiagram, 80); }
+  } else {
+    err.textContent = 'Contrasenya incorrecta. Torna-ho a intentar.';
+    inp.classList.add('error');
+    inp.value = '';
+    setTimeout(() => inp.classList.remove('error'), 400);
+    inp.focus();
+  }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter') checkPassword(); });
+
+// ── CONSTRUCCIÓ DE L'ARBRE ────────────────────────────────────────────────────
+function buildTree(data) {
+  const root = { name: "FUNDACIÓ\nONCOLLIGA", children: [] };
+  const catMap = {};
+  data.forEach(d => {
+    if (!catMap[d.cat]) {
+      catMap[d.cat] = { name: d.cat, cat: d.cat, children: [] };
+      root.children.push(catMap[d.cat]);
+    }
+    let gn = catMap[d.cat].children.find(g => g.name === d.grup);
+    if (!gn) {
+      gn = { name: d.grup, cat: d.cat, children: [] };
+      catMap[d.cat].children.push(gn);
+    }
+    gn.children.push({ name: d.sub, cat: d.cat });
+  });
+  return root;
+}
+
+// ── DIAGRAMA D3 ───────────────────────────────────────────────────────────────
+let svgEl, zoomG, gLink, gNode, treeFn, rootNode, tip;
+
+function initDiagram() {
+  // Llegenda
+  const legDiv = document.getElementById('legend');
+  Object.entries(COLORS).forEach(([cat, col]) => {
+    const el = document.createElement('div');
+    el.className = 'leg-item';
+    el.innerHTML = `<div class="leg-dot" style="background:${col}"></div><span>${cat}</span>`;
+    legDiv.appendChild(el);
+  });
+
+  const margin = {top:40, right:200, bottom:40, left:180};
+  const W = 1700 - margin.left - margin.right;
+  const H = 2600 - margin.top  - margin.bottom;
+
+  svgEl = d3.select('#tree-svg')
+    .attr('width',  W + margin.left + margin.right)
+    .attr('height', H + margin.top  + margin.bottom);
+
+  const zoom = d3.zoom().scaleExtent([0.15, 4])
+    .on('zoom', e => zoomG.attr('transform', e.transform));
+  svgEl.call(zoom);
+
+  zoomG = svgEl.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+  gLink = zoomG.append('g');
+  gNode = zoomG.append('g');
+
+  treeFn  = d3.tree().size([H, W]);
+  rootNode = d3.hierarchy(buildTree(rawData), d => d.children);
+  rootNode.x0 = H / 2;
+  rootNode.y0 = 0;
+
+  // Inicia amb categories obertes, grups tancats
+  rootNode.children.forEach(cat => {
+    cat.children && cat.children.forEach(g => {
+      if (g.children) { g._children = g.children; g.children = null; }
+    });
+  });
+
+  tip = document.getElementById('tooltip');
+  update(rootNode);
+}
+
+function color(d) {
+  if (d.depth === 0) return '#1F2D3D';
+  return COLORS[d.data.cat] || '#999';
+}
+
+function fadeColor(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function update(src) {
+  const nodes = treeFn(rootNode).descendants();
+  const links = treeFn(rootNode).links();
+  const diagonal = d3.linkHorizontal().x(d=>d.y).y(d=>d.x);
+
+  // NODES
+  const node = gNode.selectAll('g.node').data(nodes, d => d.data.name + '_' + d.depth);
+
+  const enter = node.enter().append('g').attr('class','node')
+    .attr('transform', () => `translate(${src.y0},${src.x0})`)
+    .on('click', (e,d) => { toggle(d); update(d); })
+    .on('mouseover', (e,d) => {
+      const n = (d.children||d._children||[]).length;
+      tip.style.opacity = 1;
+      tip.innerHTML = `<strong>${d.data.name}</strong>${n?`<br>Fills: ${n}`:''}${d.data.cat&&d.depth>0?`<br><em>${d.data.cat}</em>`:''}`;
+    })
+    .on('mousemove', e => { tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY-10)+'px'; })
+    .on('mouseout',  () => { tip.style.opacity=0; });
+
+  enter.append('circle').attr('r', 0)
+    .attr('fill',   d => d._children ? color(d) : (d.children ? fadeColor(color(d),.3) : 'white'))
+    .attr('stroke', d => color(d));
+
+  enter.append('text')
+    .attr('dy','0.35em')
+    .attr('x', d => (d.children||d._children) ? -13 : 13)
+    .attr('text-anchor', d => (d.children||d._children) ? 'end' : 'start')
+    .text(d => d.data.name)
+    .attr('fill', d => d.depth===0 ? 'white' : '#1F2D3D')
+    .attr('font-weight', d => d.depth<=1 ? '700' : '400');
+
+  const merged = enter.merge(node);
+  merged.transition().duration(450).attr('transform', d => `translate(${d.y},${d.x})`);
+  merged.select('circle').transition().duration(450)
+    .attr('r', d => d.depth===0 ? 18 : d.depth===1 ? 12 : d.depth===2 ? 8 : 5)
+    .attr('fill', d => d._children ? color(d) : (d.children ? fadeColor(color(d),.3) : 'white'))
+    .attr('stroke', d => color(d));
+  merged.select('text')
+    .attr('x', d => (d.children||d._children) ? -13 : 13)
+    .attr('text-anchor', d => (d.children||d._children) ? 'end' : 'start')
+    .attr('font-weight', d => d.depth<=1 ? '700' : '400');
+
+  node.exit().transition().duration(450)
+    .attr('transform', `translate(${src.y},${src.x})`).remove();
+
+  // LINKS
+  const link = gLink.selectAll('path.link').data(links, d => d.target.data.name+'_'+d.target.depth);
+  link.enter().insert('path','g').attr('class','link')
+    .attr('d', () => { const o={x:src.x0,y:src.y0}; return diagonal({source:o,target:o}); })
+    .attr('stroke', d => fadeColor(COLORS[d.target.data.cat]||'#999', 0.5))
+    .merge(link).transition().duration(450)
+    .attr('d', diagonal)
+    .attr('stroke', d => fadeColor(COLORS[d.target.data.cat]||'#999', 0.5));
+
+  link.exit().transition().duration(450)
+    .attr('d', () => { const o={x:src.x,y:src.y}; return diagonal({source:o,target:o}); }).remove();
+
+  nodes.forEach(d => { d.x0=d.x; d.y0=d.y; });
+}
+
+function toggle(d) {
+  if (d.children) { d._children=d.children; d.children=null; }
+  else             { d.children=d._children; d._children=null; }
+}
+
+function expandAll() {
+  if (!rootNode) return;
+  rootNode.descendants().forEach(d => { if (d._children){d.children=d._children;d._children=null;} });
+  update(rootNode);
+}
+function collapseAll() {
+  if (!rootNode) return;
+  rootNode.descendants().forEach(d => { if (d.depth>0&&d.children){d._children=d.children;d.children=null;} });
+  update(rootNode);
+}
+function resetZoom() {
+  if (!svgEl) return;
+  svgEl.transition().duration(400).call(d3.zoom().transform, d3.zoomIdentity.translate(180,40));
+}
+</script>
+</body>
+</html>
